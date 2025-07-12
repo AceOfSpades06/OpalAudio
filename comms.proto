@@ -1,4 +1,4 @@
-zsyntax = "proto3";
+syntax = "proto3";
 
 package com.opalcamera.test;
 
