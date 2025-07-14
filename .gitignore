@@ -1,4 +1,4 @@
 venv/
-audio_recordings/
+audio_recordings/client
 .DS_Store
 __pycache__/

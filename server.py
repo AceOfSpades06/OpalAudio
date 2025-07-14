@@ -29,7 +29,7 @@ class DeviceServiceServicer(comms_pb2_grpc.DeviceServiceServicer):
         self.status.button_3 = comms_pb2.DeviceStatus.ButtonStatus.RELEASED
         self.status.button_4 = comms_pb2.DeviceStatus.ButtonStatus.RELEASED
         self.status.battery_level = 100.0
-        self.mode_queue = queue.Queue()
+        self.state_queue = queue.Queue()
         self.audio_queue = queue.Queue()
         self.stop_audio_event = threading.Event()
 
@@ -39,7 +39,7 @@ class DeviceServiceServicer(comms_pb2_grpc.DeviceServiceServicer):
         # fix the status stream to ask for get before update
         print("StatusStream-----> server")
         while True:
-            status = self.mode_queue.get()
+            status = self.state_queue.get()
             # print("mode queue received: " + str(status))
             yield comms_pb2.DeviceStatusRequest(
                 set=comms_pb2.DeviceStatusSet(
@@ -78,14 +78,14 @@ class DeviceServiceServicer(comms_pb2_grpc.DeviceServiceServicer):
                 print("STOP button pressed")
                 self.status.button_3 = request.button_event.event
                 self.status.led_1.rgba = self.UNSET
-                self.mode_queue.put(self.status)
+                self.state_queue.put(self.status)
                 self.stop_audio_event.set()
                 yield comms_pb2.DeviceEventResponse(ack=True)
             elif request.button_event.button_id == comms_pb2.ButtonEvent.ButtonId.BUTTON_4:
                 print("PLAY button pressed")
                 self.status.button_4 = request.button_event.event
                 self.status.led_1.rgba = self.SET
-                self.mode_queue.put(self.status)
+                self.state_queue.put(self.status)
                 self.audio_queue.put(comms_pb2.AudioPacket(is_start=True))
                 yield comms_pb2.DeviceEventResponse(ack=True)
             else:
@@ -131,7 +131,7 @@ class DeviceServiceServicer(comms_pb2_grpc.DeviceServiceServicer):
         elif self.mode == 4:
             self.status.led_2.rgba = self.SET
             print("Mode 5: Back to LED 2 ON")
-        self.mode_queue.put(self.status)
+        self.state_queue.put(self.status)
 
     def unset_all_leds(self):
         self.status.led_0.rgba = self.UNSET
