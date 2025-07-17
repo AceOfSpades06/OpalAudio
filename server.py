@@ -15,6 +15,12 @@ class DeviceServiceServicer(comms_pb2_grpc.DeviceServiceServicer):
     CHANNELS = 1
     FRAME_SIZE = 960
     NUM_MODES = 4
+    song_library = {
+        0 : "audio_recordings/server/a.wav",
+        1 : "audio_recordings/server/b.wav",
+        2 : "audio_recordings/server/c.wav",
+        3 : "audio_recordings/server/d.wav",
+    }
     def __init__(self):
         self.devices = {}
         self.stop_audio_event = {}
@@ -27,62 +33,63 @@ class DeviceServiceServicer(comms_pb2_grpc.DeviceServiceServicer):
         device_id = self._get_device_id(context)
         if device_id not in self.devices:
             self.setup_device(device_id)
-        while context.is_active():
-            status = self.devices[device_id]["state_q"].get()
-            # print("mode queue received: " + str(status))
-            yield comms_pb2.DeviceStatusRequest(
-                set=comms_pb2.DeviceStatusSet(
-                    led_0=status.led_0, 
-                    led_1=status.led_1, 
-                    led_2=status.led_2, 
-                    led_3=status.led_3, 
-                    led_4=status.led_4, 
-                    led_5=status.led_5))
-        # for request in request_iterator:
-        #     print(f"StatusStream received: {request}")
-        #     if request.status == "SUCCESS":
-        #         yield comms_pb2.DeviceStatusRequest(get=True)
-        #     else:
-        #         self.status.led_1 = request.status.led_1
-        #         self.status.led_2 = request.status.led_2
-        #         self.status.led_3 = request.status.led_3
-        #         self.status.led_4 = request.status.led_4
-        #         self.status.led_5 = request.status.led_5
-        #         yield comms_pb2.DeviceStatusRequest(set=self.status)
+        try:
+            while context.is_active():
+                try:
+                    status = self.devices[device_id]["state_q"].get(timeout=1.0)
+                    yield comms_pb2.DeviceStatusRequest(
+                        set=comms_pb2.DeviceStatusSet(
+                            led_0=status.led_0, 
+                            led_1=status.led_1, 
+                            led_2=status.led_2, 
+                            led_3=status.led_3, 
+                            led_4=status.led_4, 
+                            led_5=status.led_5))
+                except queue.Empty:
+                    continue
+        except Exception as e:
+            print(f"Error in StatusStream for device {device_id}: {e}")
+        finally:
+            print(f"StatusStream closed for device {device_id}")
 
     # The device streams DeviceEvents(s) and expects a DeviceEventResponse to ACK
     def EventStream(self, request_iterator, context):
         print("EventStream-----> server")
         device_id = self._get_device_id(context)
-        for request in request_iterator:
-            if device_id not in self.devices:
-                self.setup_device(device_id)
-            if request.button_event.button_id == comms_pb2.ButtonEvent.ButtonId.BUTTON_1:
-                print("POWER button pressed")
-                self.devices[device_id]["status"].button_1 = request.button_event.event
-                yield comms_pb2.DeviceEventResponse(ack=True)
-            elif request.button_event.button_id == comms_pb2.ButtonEvent.ButtonId.BUTTON_2:
-                print("MODE button pressed")
-                self.devices[device_id]["status"].button_2 = request.button_event.event
-                self.change_mode(device_id)
-                yield comms_pb2.DeviceEventResponse(ack=True)
-            elif request.button_event.button_id == comms_pb2.ButtonEvent.ButtonId.BUTTON_3:
-                print("STOP button pressed")
-                self.devices[device_id]["status"].button_3 = request.button_event.event
-                self.devices[device_id]["status"].led_1.rgba = self.UNSET
-                self.devices[device_id]["state_q"].put(self.devices[device_id]["status"])
-                self.stop_audio_event[device_id].set()
-                yield comms_pb2.DeviceEventResponse(ack=True)
-            elif request.button_event.button_id == comms_pb2.ButtonEvent.ButtonId.BUTTON_4:
-                print("PLAY button pressed")
-                self.devices[device_id]["status"].button_4 = request.button_event.event
-                self.devices[device_id]["status"].led_1.rgba = self.SET
-                self.devices[device_id]["state_q"].put(self.devices[device_id]["status"])
-                self.devices[device_id]["audio_q"].put(comms_pb2.AudioPacket(is_start=True))
-                yield comms_pb2.DeviceEventResponse(ack=True)
-            else:
-                print("Unknown button pressed")
-                yield comms_pb2.DeviceEventResponse(ack=False)
+        try:
+            for request in request_iterator:
+                if device_id not in self.devices:
+                    self.setup_device(device_id)
+                if request.button_event.button_id == comms_pb2.ButtonEvent.ButtonId.BUTTON_1:
+                    print("POWER button pressed")
+                    self.devices[device_id]["status"].button_1 = request.button_event.event
+                    yield comms_pb2.DeviceEventResponse(ack=True)
+                elif request.button_event.button_id == comms_pb2.ButtonEvent.ButtonId.BUTTON_2:
+                    print("MODE button pressed")
+                    self.devices[device_id]["status"].button_2 = request.button_event.event
+                    self.change_mode(device_id)
+                    yield comms_pb2.DeviceEventResponse(ack=True)
+                elif request.button_event.button_id == comms_pb2.ButtonEvent.ButtonId.BUTTON_3:
+                    print("STOP button pressed")
+                    self.devices[device_id]["status"].button_3 = request.button_event.event
+                    self.devices[device_id]["status"].led_1.rgba = self.UNSET
+                    self.devices[device_id]["state_q"].put(self.devices[device_id]["status"])
+                    self.stop_audio_event[device_id].set()
+                    yield comms_pb2.DeviceEventResponse(ack=True)
+                elif request.button_event.button_id == comms_pb2.ButtonEvent.ButtonId.BUTTON_4:
+                    print("PLAY button pressed")
+                    self.devices[device_id]["status"].button_4 = request.button_event.event
+                    self.devices[device_id]["status"].led_1.rgba = self.SET
+                    self.devices[device_id]["state_q"].put(self.devices[device_id]["status"])
+                    self.devices[device_id]["audio_q"].put(comms_pb2.AudioPacket(is_start=True))
+                    yield comms_pb2.DeviceEventResponse(ack=True)
+                else:
+                    print("Unknown button pressed")
+                    yield comms_pb2.DeviceEventResponse(ack=False)
+        except Exception as e:
+            print(f"Error in EventStream for device {device_id}: {e}")
+        finally:
+            print(f"EventStream closed for device {device_id}")
 
     # The device opens a stream from the server with an AudioStreamRequest and server 
     # streams Opus-encoded audio packets
@@ -91,20 +98,26 @@ class DeviceServiceServicer(comms_pb2_grpc.DeviceServiceServicer):
         device_id = self._get_device_id(context)
         if device_id not in self.devices:
             self.setup_device(device_id)
-        while True:
-            audio_request = self.devices[device_id]["audio_q"].get()
-            if self.devices[device_id]["mode"] == 0:
-                for audio_packet in self.stream_audio(wave.open("audio_recordings/server/a.wav", "rb"), device_id):
-                    yield audio_packet
-            elif self.devices[device_id]["mode"] == 1:
-                for audio_packet in self.stream_audio(wave.open("audio_recordings/server/b.wav", "rb"), device_id):
-                    yield audio_packet
-            elif self.devices[device_id]["mode"] == 2:
-                for audio_packet in self.stream_audio(wave.open("audio_recordings/server/c.wav", "rb"), device_id):
-                    yield audio_packet
-            elif self.devices[device_id]["mode"] == 3:
-                for audio_packet in self.stream_audio(wave.open("audio_recordings/server/d.wav", "rb"), device_id):
-                    yield audio_packet
+        
+        try:
+            while context.is_active():
+                try:
+                    # Use timeout to avoid blocking indefinitely
+                    audio_request = self.devices[device_id]["audio_q"].get(timeout=1.0)
+                    for audio_packet in self.stream_audio(
+                        wave.open(self.song_library[self.devices[device_id]["mode"]], "rb"), device_id):
+                        if not context.is_active():
+                            print("Connection closed during audio streaming")
+                            return
+                        yield audio_packet
+                except queue.Empty:
+                    # Timeout occurred, check if context is still active
+                    continue
+        except Exception as e:
+            print(f"Error in ServerAudioStream for device {device_id}: {e}")
+        finally:
+            print(f"ServerAudioStream closed for device {device_id}")
+            
 
     def change_mode(self, device_id):
         print("=== CHANGING MODE ===")
@@ -112,16 +125,16 @@ class DeviceServiceServicer(comms_pb2_grpc.DeviceServiceServicer):
         self.unset_all_leds(device_id)
         if self.devices[device_id]["mode"] == 0:
             self.devices[device_id]["status"].led_2.rgba = self.SET
-            print("Mode 1: LED 2 ON")
+            print("Mode 0: LED 2 ON")
         elif self.devices[device_id]["mode"] == 1:
             self.devices[device_id]["status"].led_3.rgba = self.SET
-            print("Mode 2: LED 3 ON")
+            print("Mode 1: LED 3 ON")
         elif self.devices[device_id]["mode"] == 2:
             self.devices[device_id]["status"].led_4.rgba = self.SET
-            print("Mode 3: LED 4 ON")
+            print("Mode 2: LED 4 ON")
         elif self.devices[device_id]["mode"] == 3:
             self.devices[device_id]["status"].led_5.rgba = self.SET
-            print("Mode 4: LED 5 ON")
+            print("Mode 3: LED 5 ON")
         self.devices[device_id]["state_q"].put(self.devices[device_id]["status"])
 
     def unset_all_leds(self, device_id):
@@ -145,12 +158,7 @@ class DeviceServiceServicer(comms_pb2_grpc.DeviceServiceServicer):
         }
         # per-device stop flag
         self.stop_audio_event[device_id] = threading.Event()
-        self.devices[device_id]["status"].led_0.rgba = self.UNSET
-        self.devices[device_id]["status"].led_1.rgba = self.UNSET
-        self.devices[device_id]["status"].led_2.rgba = self.UNSET
-        self.devices[device_id]["status"].led_3.rgba = self.UNSET
-        self.devices[device_id]["status"].led_4.rgba = self.UNSET
-        self.devices[device_id]["status"].led_5.rgba = self.UNSET
+        self.unset_all_leds(device_id)
         self.devices[device_id]["status"].button_1 = comms_pb2.DeviceStatus.ButtonStatus.RELEASED
         self.devices[device_id]["status"].button_2 = comms_pb2.DeviceStatus.ButtonStatus.RELEASED
         self.devices[device_id]["status"].button_3 = comms_pb2.DeviceStatus.ButtonStatus.RELEASED
@@ -168,7 +176,6 @@ class DeviceServiceServicer(comms_pb2_grpc.DeviceServiceServicer):
                 self.stop_audio_event[device_id].clear()
                 print("Stream audio interrupted by stop event")
                 return
-                
             pcm_data = wave_file.readframes(frame_size)
             if len(pcm_data) == 0:
                 break
@@ -179,6 +186,7 @@ class DeviceServiceServicer(comms_pb2_grpc.DeviceServiceServicer):
                                         is_end=False,
                                         data=bytes(opus_data))
             first_packet = False
+        wave_file.close()
         yield comms_pb2.AudioPacket(is_start=False, is_end=True)
 
 
